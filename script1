@@ -1,0 +1,86 @@
+# El Colegio de Mexico
+# Centro de Estudios Demograficos, Urbanos y Ambientales (CEDUA)
+# Maestria en Estudios Urbanos (2021-2023)
+# Octavio Rivas Lopez
+# Calculo y mapeo de Cocientes de Localizacion (LQ)
+# Ciudad de Mexico, Agosto de 2023
+# ------------------------------------------------------------------------------
+# Se usa información de los Censos Economicos 2019 y del Marco Geoestadistico 
+# Nacional 2020 del INEGI. Consultese los siguientes sitios de internet:
+# http://www.inegi.org.mx/app/saic/
+# http://www.inegi.org.mx/temas/mg/
+# El ejericio se realiza para el estado de Queretaro (Mexico) en 2018
+# ------------------------------------------------------------------------------
+  # ---- Calculo de LQ ----
+    # Instalacion y llamado de paquetes
+# install.packages('tidyverse')
+library(tidyverse)
+    # Directorio de trabajo
+setwd('C://estadisticas')
+    # Lectura/carga de datos
+base_datos <- read.csv('datos_qro.csv')
+str(base_datos)
+    # Modificacion de variables
+base_datos <- base_datos %>%
+  rename(anio = Año.Censal,
+         act_eco = Actividad.económica,
+         pot = H001A.Personal.ocupado.total,
+         vacb = A131A.Valor.agregado.censal.bruto..millones.de.pesos.,
+         it = A211A.Inversión.total..millones.de.pesos.)
+base_datos[is.na(base_datos)] <- 0
+base_lq <- subset(base_datos, select = c(vacb, Municipio, act_eco))
+    # Adecuacion de base de datos
+matriz_vacb <- base_lq %>%
+  pivot_wider(names_from = Municipio, values_from = vacb)
+matriz_vacb[is.na(matriz_vacb)] <- 0
+nombres_filas <- matriz_vacb[, 1]
+nombres_filas <- as.data.frame(nombres_filas)
+matriz_vacb <- matriz_vacb[, -1]
+rownames(matriz_vacb) <- nombres_filas$act_eco
+    # Calculo de matriz de cocientes de localizacion
+lq_matriz <- matrix(0, nrow = nrow(matriz_vacb), ncol = ncol(matriz_vacb))
+lq_matriz <- as.data.frame(lq_matriz)
+rownames(lq_matriz) <- nombres_filas$act_eco
+nombres_col <- colnames(matriz_vacb)
+nombres_col <- as.data.frame(nombres_col)
+colnames(lq_matriz) <- nombres_col$nombres_col
+for (i in 1:nrow(matriz_vacb)) {
+  for (j in 1:ncol(matriz_vacb)) {
+    lq_matriz[i, j] <- (matriz_vacb[i, j] / sum(matriz_vacb[i, ])) / 
+    (sum(matriz_vacb[, j]) / sum(matriz_vacb))
+  }
+}
+View(lq_matriz)
+write.csv(lq_matriz, 'matriz_lq_queretaro_2018.csv')
+  # ---- Mapas de LQ ----
+    # Instalacion y llamado de paquetes
+# install.packages('sf')
+library(sf)
+# install.packages('RColorBrewer')
+library(RColorBrewer)
+    # Lectura/carga de archivo .shp 
+qro_mun <- '2022_22_MUN.shp'
+mapa_qro <- st_read(qro_mun)
+    # Adecuacion de base de datos
+id_mun <- substr(nombres_col$nombres_col, 1, 3)
+id_mun <-  paste0('22', id_mun)
+lq_datos <- lq_matriz
+lq_datos <- rbind(lq_datos, id_mun)
+rownames(lq_datos)[nrow(lq_datos)] <- 'CVEGEO'
+lq_datos <- t(lq_datos)
+mapa_qro_lq <- merge(mapa_qro, lq_datos, by = 'CVEGEO')
+colnames(mapa_qro_lq)[5:23] <- c('s11', 's21', 's22', 's23', 's31_33', 's43',
+                                 's46','s48_49', 's51', 's52', 's53', 's54', 
+                                 's56', 's61', 's62', 's71', 's72', 's81', 
+                                 's55')
+    # Creacion de mapa
+mapa_qro_lq$s31_33 <- as.numeric(mapa_qro_lq$s31_33)
+summary(mapa_qro_lq$s31_33)
+qro_mapa <- ggplot() +
+  geom_sf(data = mapa_qro_lq, aes(fill = cut(s31_33, breaks = 
+          c(0, 0.5, 1, 1.5))), color = "black", size = 0.2) +
+  labs(title = 'LQ de la industria manufacturera, Querétaro (2018)',
+       fill = 'LQ') +
+  scale_fill_brewer(palette = 'YlOrRd')
+print(qro_mapa)
+ggsave('lq3133_qro_2018.png', plot = qro_mapa, width = 6, height = 4, dpi = 300)
